@@ -17,15 +17,12 @@
 package com.example.android.wearable.watchface;
 
 import android.content.BroadcastReceiver;
-import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.database.Cursor;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
-import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.Message;
@@ -35,13 +32,15 @@ import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
 import android.text.DynamicLayout;
 import android.text.Editable;
-import android.text.Html;
 import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.TextPaint;
-import android.text.format.DateUtils;
 import android.util.Log;
 import android.view.SurfaceHolder;
+
+import com.example.android.wearable.watchface.calendar.CalendarEvent;
+
+import java.util.ArrayList;
 
 /**
  * Proof of concept sample watch face that demonstrates how a watch face can load calendar data.
@@ -74,6 +73,9 @@ public class CalendarWatchFaceService extends CanvasWatchFaceService {
         final TextPaint mTextPaint = new TextPaint();
 
         int mNumMeetings;
+        ArrayList<CalendarEvent> mEventList = null;
+        //  ...from my observation, only 24 hours of calendar are downloaded to watch. Specified more than 24 is useless.
+        int mHourRange = 12;
 
         private AsyncTask<Void, Void, Integer> mLoadMeetingsTask;
 
@@ -141,8 +143,26 @@ public class CalendarWatchFaceService extends CanvasWatchFaceService {
 
             // Update the contents of mEditable.
             mEditable.clear();
-            mEditable.append(Html.fromHtml(getResources().getQuantityString(
-                    R.plurals.calendar_meetings, mNumMeetings, mNumMeetings)));
+//            mEditable.append(Html.fromHtml(getResources().getQuantityString(
+//                    R.plurals.calendar_meetings, mNumMeetings, mNumMeetings)));
+
+            boolean getFirstOnly = false;
+            if (mEventList == null) {
+                mEditable.append("\nFetching...");
+            }
+            else if (mEventList.size() > 0) {
+                mEditable.append("\nNext event:\n");
+
+                for (CalendarEvent event : mEventList) {
+                    mEditable.append(event.getTimeLeftString(1));
+                    mEditable.append("\n");
+                    mEditable.append(event.getTimeLeftString(0));
+                    mEditable.append("\n\n");
+
+                    if (getFirstOnly) break;
+                }
+            }
+            else mEditable.append("\nNo next event");
 
             // Draw the text on a solid background.
             canvas.drawColor(BACKGROUND_COLOR);
@@ -196,19 +216,10 @@ public class CalendarWatchFaceService extends CanvasWatchFaceService {
                         PowerManager.PARTIAL_WAKE_LOCK, "CalendarWatchFaceWakeLock");
                 mWakeLock.acquire();
 
-                long begin = System.currentTimeMillis();
-                Uri.Builder builder =
-                        WearableCalendarContract.Instances.CONTENT_URI.buildUpon();
-                ContentUris.appendId(builder, begin);
-                ContentUris.appendId(builder, begin + DateUtils.DAY_IN_MILLIS);
-                final Cursor cursor = getContentResolver().query(builder.build(),
-                        null, null, null, null);
-                int numMeetings = cursor.getCount();
-                if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                    Log.v(TAG, "Num meetings: " + numMeetings);
-                }
-                return numMeetings;
+                mEventList = CalendarEvent.getNextEvents(CalendarWatchFaceService.this, -1, mHourRange);
+                return mEventList == null ? 0 : mEventList.size();
             }
+
 
             @Override
             protected void onPostExecute(Integer result) {
